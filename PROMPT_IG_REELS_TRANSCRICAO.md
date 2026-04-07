@@ -1,74 +1,67 @@
-# Prompt: Baixar, Transcrever, Traduzir e Adaptar os 10 Últimos Reels de um Perfil do Instagram
+# Prompt: Pipeline Completo de Reels — Download, Transcrição e Adaptação
 
 Cole o conteúdo abaixo em um novo chat do Claude Code para executar o pipeline completo.
+Tudo roda localmente ou dentro do próprio Claude Code — sem dependência de API de IA externa.
 
 ---
 
 ## PROMPT PARA COLAR NO CLAUDE CODE
 
 ```
-Quero que você execute um pipeline completo: baixar os 10 últimos Reels de um perfil do Instagram, transcrever cada vídeo, traduzir para português do Brasil e adaptar ao meu posicionamento como Dr. Marcos Loiola.
+Quero que você execute um pipeline completo para o expert: @[NOME_DO_EXPERT]
 
-O perfil alvo é: [COLE AQUI O @ OU URL DO PERFIL — ex: @nomedobperfil ou https://www.instagram.com/nomedoberfil/]
+Passos:
+1. Baixar os 10 últimos Reels do perfil
+2. Transcrever cada vídeo localmente com Whisper
+3. Apagar os vídeos após a transcrição
+4. Ler cada transcrição e gerar o roteiro adaptado ao meu posicionamento
+5. Salvar os roteiros adaptados em ~/Downloads/Instagram/roteiros/
 
-Execute todos os passos abaixo em sequência, confirmando cada um antes de passar para o próximo.
+Execute cada passo em sequência e me mostre o progresso.
+```
 
 ---
+
+## INSTRUÇÕES PARA O CLAUDE CODE EXECUTAR
 
 ### PASSO 1 — Verificar dependências
 
 ```bash
-python3 -c "
+export PATH="$HOME/Library/Python/3.9/bin:$PATH" && python3 -c "
 import shutil, sys, os
-gdl = shutil.which('gallery-dl')
-if not gdl:
-    for v in ['3.9','3.10','3.11','3.12']:
-        c = os.path.expanduser(f'~/Library/Python/{v}/bin/gallery-dl')
-        if os.path.isfile(c):
-            gdl = c
-            break
-print(f'gallery-dl: {gdl or \"NÃO ENCONTRADO\"}')
 for v in ['3.9','3.10','3.11','3.12']:
-    site = os.path.expanduser(f'~/Library/Python/{v}/lib/python/site-packages')
-    if os.path.isdir(site): sys.path.insert(0, site)
-try:
-    import whisper; print('whisper: OK')
+    s = os.path.expanduser(f'~/Library/Python/{v}/lib/python/site-packages')
+    if os.path.isdir(s): sys.path.insert(0, s)
+gdl = shutil.which('gallery-dl') or next((c for c in [os.path.expanduser(f'~/Library/Python/{v}/bin/gallery-dl') for v in ['3.9','3.10','3.11','3.12']] if os.path.isfile(c)), None)
+print(f'gallery-dl: {gdl or \"NÃO ENCONTRADO\"}')
+try: import whisper; print('whisper: OK')
 except: print('whisper: NÃO INSTALADO')
-try:
-    import imageio_ffmpeg; print(f'ffmpeg: {imageio_ffmpeg.get_ffmpeg_exe()}')
+try: import imageio_ffmpeg; print(f'ffmpeg: {imageio_ffmpeg.get_ffmpeg_exe()}')
 except: print('ffmpeg: NÃO ENCONTRADO')
-try:
-    import anthropic; print('anthropic SDK: OK')
-except: print('anthropic: NÃO INSTALADO')
 "
 ```
 
 Se alguma dependência estiver faltando:
 ```bash
-pip3 install --user gallery-dl openai-whisper imageio-ffmpeg anthropic
-```
-
-Criar symlink do ffmpeg:
-```bash
+pip3 install --user gallery-dl openai-whisper imageio-ffmpeg
 ln -sf $(python3 -c "import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())") ~/Library/Python/3.9/bin/ffmpeg
 ```
 
-> IMPORTANTE: NÃO use `yt-dlp` para baixar do Instagram. Use `gallery-dl`.
+> NÃO use `yt-dlp` para Instagram — extrator está broken desde 2025. Use `gallery-dl`.
 
 ---
 
-### PASSO 2 — Criar estrutura de pastas
+### PASSO 2 — Criar pastas
 
 ```bash
-mkdir -p ~/Downloads/Instagram/reels_tmp
-mkdir -p ~/Downloads/Instagram/roteiros
+mkdir -p ~/Downloads/Instagram/reels_tmp ~/Downloads/Instagram/roteiros
 ```
 
 ---
 
-### PASSO 3 — Criar o script principal
+### PASSO 3 — Criar o script de download + transcrição
 
-Crie o arquivo `~/Documents/ClaudeCode/reels_transcrever.py` com o conteúdo abaixo:
+Crie `~/Documents/ClaudeCode/reels_transcrever.py`:
 
 ```python
 #!/usr/bin/env python3
@@ -93,8 +86,7 @@ def setup_ffmpeg():
     for v in ["3.9","3.10","3.11","3.12"]:
         c = os.path.expanduser(f"~/Library/Python/{v}/bin/ffmpeg")
         if os.path.isfile(c):
-            os.environ["PATH"] = os.path.dirname(c) + ":" + os.environ.get("PATH","")
-            return
+            os.environ["PATH"] = os.path.dirname(c) + ":" + os.environ.get("PATH",""); return
     try:
         import imageio_ffmpeg
         os.environ["PATH"] = os.path.dirname(imageio_ffmpeg.get_ffmpeg_exe()) + ":" + os.environ.get("PATH","")
@@ -130,42 +122,21 @@ def download_reels(url):
 def transcribe(video_path, index):
     try: import whisper
     except ImportError: print("[ERRO] whisper não encontrado."); return None
-    print(f"\n[{index}] Transcrevendo: {os.path.basename(video_path)}")
+    print(f"\n[{index:02d}] Transcrevendo: {os.path.basename(video_path)}")
     model = whisper.load_model("small")
     result = model.transcribe(video_path, task="transcribe")
     lang, text = result.get("language","?"), result["text"].strip()
-    print(f"   Idioma: {lang} | {len(text)} chars")
+    print(f"      Idioma: {lang} | {len(text)} chars")
     return lang, text
 
-POSICIONAMENTO = """
-Você é o Dr. Marcos Loiola, clínico geral e especialista em marketing para médicos que querem usar o digital para crescer, conseguir pacientes ou criar produtos digitais.
-
-POSICIONAMENTO: Ensine médicos a pensar melhor e crescer com inteligência no digital. Misture autoridade clínica + mentalidade + estratégia. Evite superficialidade.
-TOM: Assertivo, direto, seguro. Levemente provocador. Sem motivacional clichê.
-LINGUAGEM: Clara, objetiva, sem enrolação. Termos técnicos quando agregam. Sem jargão acadêmico excessivo.
-DIFERENCIAL: Não agrade. Não seja neutro. Gere desconforto produtivo quando necessário.
-EVITAR: Frases tipo "não é sobre isso, é sobre aquilo". Conteúdo genérico. Tom de coach. Opiniões óbvias. Falta de ponto de vista.
-PÚBLICO: Médicos jovens e residentes que querem crescer no digital.
-OBJETIVO: Fazer pensar melhor, gerar clareza prática, aumentar percepção de autoridade.
-"""
-
-def traduzir_e_adaptar(texto, idioma, index, expert):
-    try: import anthropic
-    except ImportError: print("[ERRO] anthropic não encontrado."); return None
-    print(f"\n[{index}] Adaptando via Claude...")
-    prompt = f"""Transcrição de Reel do @{expert} (idioma: {idioma}):\n\n{texto}\n\n---\nTAREFA:\n1. Traduza para PT-BR se não estiver em português.\n2. Reescreva o roteiro adaptado para o Dr. Marcos Loiola, mantendo a ideia central mas na voz e posicionamento abaixo.\n3. Retorne apenas o roteiro final, sem comentários ou cabeçalhos.\n\n{POSICIONAMENTO}"""
-    msg = anthropic.Anthropic().messages.create(model="claude-sonnet-4-6", max_tokens=2048, messages=[{"role":"user","content":prompt}])
-    adapted = msg.content[0].text.strip()
-    print(f"   Concluído | {len(adapted)} chars")
-    return adapted
-
-def save_roteiro(index, video_path, username, idioma, original, adaptado):
+def save_transcricao(index, video_path, username, lang, text):
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     shortcode = os.path.splitext(os.path.basename(video_path))[0]
-    filepath = os.path.join(OUTPUT_DIR, f"{index:02d} - {username} - {shortcode}_roteiro_adaptado.txt")
+    filepath = os.path.join(OUTPUT_DIR, f"{index:02d} - {username} - {shortcode}_transcricao.txt")
+    header = f"TRANSCRIÇÃO #{index:02d}\nExpert: @{username}\nShortcode: {shortcode}\nIdioma detectado: {lang}\n" + "="*60 + "\n\n"
     with open(filepath, "w", encoding="utf-8") as f:
-        f.write(f"ROTEIRO ADAPTADO #{index:02d}\nExpert original: @{username}\nShortcode: {shortcode}\nIdioma original: {idioma}\n" + "="*60 + "\n\n── ROTEIRO ADAPTADO (Dr. Marcos Loiola) ──\n\n" + adaptado + "\n\n" + "─"*60 + "\n── TRANSCRIÇÃO ORIGINAL ──\n\n" + original)
-    print(f"   Salvo: {os.path.basename(filepath)}")
+        f.write(header + text)
+    print(f"      Salvo: {os.path.basename(filepath)}")
     return filepath
 
 def limpar_videos():
@@ -178,77 +149,55 @@ if __name__ == "__main__":
     if len(sys.argv) < 2: print("Uso: python3 reels_transcrever.py <@usuario>"); sys.exit(1)
     username = get_username(sys.argv[1])
     videos = download_reels(normalize_profile(sys.argv[1]))
-    if not videos: print("[ERRO] Nenhum vídeo."); sys.exit(1)
-    roteiros = []
+    if not videos: print("[ERRO] Nenhum vídeo encontrado."); sys.exit(1)
+    transcritos = []
     for i, video in enumerate(videos[:10], start=1):
         result = transcribe(video, i)
-        if not result: continue
-        idioma, original = result
-        adaptado = traduzir_e_adaptar(original, idioma, i, username) or original
-        roteiros.append(save_roteiro(i, video, username, idioma, original, adaptado))
+        if result:
+            lang, text = result
+            transcritos.append(save_transcricao(i, video, username, lang, text))
     limpar_videos()
     print("\n" + "="*60)
-    print(f"CONCLUÍDO! {len(roteiros)} roteiro(s) em {OUTPUT_DIR}")
-    for r in roteiros: print(f"  • {os.path.basename(r)}")
+    print(f"TRANSCRIÇÃO CONCLUÍDA! {len(transcritos)} arquivo(s) em: {OUTPUT_DIR}")
+    for t in transcritos: print(f"  • {os.path.basename(t)}")
+    print("\n[PRÓXIMO PASSO] Claude Code lê cada arquivo e gera os roteiros adaptados.")
 ```
 
 ---
 
-### PASSO 4 — Testar dependências
+### PASSO 4 — Executar download + transcrição
 
 ```bash
-export PATH="$HOME/Library/Python/3.9/bin:$PATH" && python3 -c "
-import shutil, sys, os
-for v in ['3.9','3.10','3.11','3.12']:
-    s = os.path.expanduser(f'~/Library/Python/{v}/lib/python/site-packages')
-    if os.path.isdir(s): sys.path.insert(0, s)
-print('gallery-dl:', shutil.which('gallery-dl'))
-try: import whisper; print('whisper: OK')
-except: print('whisper: FALTANDO')
-try: import imageio_ffmpeg; print('ffmpeg:', imageio_ffmpeg.get_ffmpeg_exe())
-except: print('ffmpeg: FALTANDO')
-try: import anthropic; print('anthropic: OK')
-except: print('anthropic: FALTANDO')
-"
+export PATH="$HOME/Library/Python/3.9/bin:$PATH" && python3 ~/Documents/ClaudeCode/reels_transcrever.py @[NOME_DO_EXPERT]
 ```
 
 ---
 
-### PASSO 5 — Configurar a API Key da Anthropic
+### PASSO 5 — Claude Code adapta cada roteiro
 
-A etapa de adaptação usa o Claude via API. Configure a chave:
+Após o script terminar, o Claude Code executa automaticamente:
 
-```bash
-export ANTHROPIC_API_KEY="sua-chave-aqui"
-```
+1. Lê cada arquivo `*_transcricao.txt` em `~/Downloads/Instagram/roteiros/`
+2. Traduz para português do Brasil se necessário
+3. Reescreve o roteiro adaptado ao posicionamento do Dr. Marcos Loiola (abaixo)
+4. Salva como `*_roteiro_adaptado.txt` no mesmo diretório
 
-Para persistir entre sessões:
-```bash
-echo 'export ANTHROPIC_API_KEY="sua-chave-aqui"' >> ~/.zshrc
-```
+**Posicionamento do Dr. Marcos Loiola:**
 
----
-
-### PASSO 6 — Executar o pipeline completo
-
-```bash
-export PATH="$HOME/Library/Python/3.9/bin:$PATH" && python3 ~/Documents/ClaudeCode/reels_transcrever.py @nomedoberfil
-```
-
-O script vai:
-1. Baixar os 10 Reels mais recentes
-2. Transcrever com Whisper (`small`)
-3. Traduzir + adaptar ao posicionamento do Dr. Marcos Loiola via Claude
-4. Salvar roteiros em `~/Downloads/Instagram/roteiros/`
-5. Apagar automaticamente os vídeos
+- **Quem é:** Clínico geral, especialista em marketing para médicos que querem usar o digital para crescer, conseguir pacientes ou criar produtos digitais
+- **Tom:** Assertivo, direto, seguro — levemente provocador quando necessário. Sem motivacional clichê
+- **Linguagem:** Clara, objetiva, sem enrolação. Termos técnicos quando agregam. Sem jargão acadêmico
+- **Diferencial:** Não agrada, não é neutro, tem posicionamento claro, gera desconforto produtivo
+- **Evitar:** "não é sobre isso, é sobre aquilo" · conteúdo genérico · tom de coach · opiniões óbvias
+- **Público:** Médicos jovens e residentes que querem crescer no digital
+- **Objetivo:** Fazer pensar melhor · gerar clareza prática · aumentar percepção de autoridade
 
 ---
 
-### PASSO 7 — Verificar os roteiros
+### PASSO 6 — Verificar os roteiros adaptados
 
 ```bash
 ls -la ~/Downloads/Instagram/roteiros/
-cat ~/Downloads/Instagram/roteiros/01\ -\ *_roteiro_adaptado.txt
 ```
 
 ---
@@ -256,20 +205,25 @@ cat ~/Downloads/Instagram/roteiros/01\ -\ *_roteiro_adaptado.txt
 ## FORMATO DE SAÍDA
 
 ```
+01 - expert - shortcode_transcricao.txt       ← transcrição bruta (referência)
+01 - expert - shortcode_roteiro_adaptado.txt  ← roteiro final na voz do Dr. Marcos
+```
+
+Cada `_roteiro_adaptado.txt` contém:
+```
 ROTEIRO ADAPTADO #01
-Expert original: @nomedoberfil
-Shortcode: 3820992786792885884
+Expert original: @expert
 Idioma original: en
 ============================================================
 
 ── ROTEIRO ADAPTADO (Dr. Marcos Loiola) ──
 
-[roteiro reescrito na voz do Dr. Marcos, para médicos brasileiros]
+[roteiro reescrito para médicos brasileiros]
 
 ────────────────────────────────────────────────────────────
 ── TRANSCRIÇÃO ORIGINAL ──
 
-[transcrição bruta do Whisper no idioma original]
+[texto bruto do Whisper]
 ```
 
 ---
@@ -283,14 +237,13 @@ O `yt-dlp` tem extrator Instagram **broken** desde 2025. O `gallery-dl` funciona
 Sem ffmpeg, Whisper falha com `FileNotFoundError`:
 ```bash
 ln -sf $(python3 -c "import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())") ~/Library/Python/3.9/bin/ffmpeg
-export PATH="$HOME/Library/Python/3.9/bin:$PATH"
 ```
 
 ### Formato DASH
-Sem ffmpeg, `gallery-dl` baixa apenas vídeo (`.fdash-*v.mp4`). Com ffmpeg, mescla automático.
+Sem ffmpeg no PATH, gallery-dl baixa só vídeo (`.fdash-*v.mp4`). Com ffmpeg, mescla automático.
 
-### Adaptação via Claude
-Usa `claude-sonnet-4-6`. Requer `ANTHROPIC_API_KEY`. ~500–2000 tokens por roteiro.
+### Sem dependência de API externa
+A adaptação é feita pelo próprio Claude Code, diretamente no chat. Nenhuma chave de API adicional necessária.
 
 ### Modelos Whisper
 
@@ -306,12 +259,10 @@ Usa `claude-sonnet-4-6`. Requer `ANTHROPIC_API_KEY`. ~500–2000 tokens por rote
 
 ## CHECKLIST
 
-- [ ] `gallery-dl` instalado
-- [ ] `openai-whisper` instalado
-- [ ] `imageio-ffmpeg` instalado
-- [ ] `anthropic` instalado
+- [ ] `gallery-dl` instalado (`pip3 install --user gallery-dl`)
+- [ ] `openai-whisper` instalado (`pip3 install --user openai-whisper`)
+- [ ] `imageio-ffmpeg` instalado (`pip3 install --user imageio-ffmpeg`)
 - [ ] ffmpeg symlink criado
-- [ ] `ANTHROPIC_API_KEY` configurada
-- [ ] Chrome logado no Instagram
-- [ ] `export PATH="$HOME/Library/Python/3.9/bin:$PATH" && python3 ~/Documents/ClaudeCode/reels_transcrever.py @perfil`
-```
+- [ ] Chrome aberto e logado no Instagram
+- [ ] Rodar: `export PATH="$HOME/Library/Python/3.9/bin:$PATH" && python3 ~/Documents/ClaudeCode/reels_transcrever.py @expert`
+- [ ] Claude Code lê e adapta cada transcrição automaticamente
