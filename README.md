@@ -2,12 +2,14 @@
 
 Pipeline automatizado para baixar os 10 últimos Reels de qualquer perfil do Instagram e transcrever o áudio de cada vídeo, gerando arquivos de texto com o roteiro completo.
 
+> **Nota:** O `yt-dlp` tem suporte ao Instagram marcado como **broken** desde 2025. Este pipeline usa `gallery-dl` para download, que funciona corretamente com os cookies do Chrome.
+
 ---
 
 ## O que faz
 
 1. Recebe um `@usuario` ou URL de perfil do Instagram
-2. Baixa os 10 Reels mais recentes usando `yt-dlp`
+2. Baixa os 10 Reels mais recentes usando `gallery-dl` com cookies do Chrome
 3. Transcreve cada vídeo localmente com OpenAI Whisper (sem API key, gratuito)
 4. Detecta o idioma automaticamente
 5. Salva 10 arquivos `.txt` com o roteiro de cada vídeo
@@ -30,11 +32,13 @@ O Claude vai executar o pipeline passo a passo e entregar os 10 roteiros prontos
 
 | Ferramenta | Instalação |
 |------------|------------|
-| `yt-dlp` | `pip3 install yt-dlp` |
+| `gallery-dl` | `pip3 install --user gallery-dl` |
 | `openai-whisper` | `pip3 install --user openai-whisper` |
 | `imageio-ffmpeg` | `pip3 install --user imageio-ffmpeg` |
 
-> Chrome deve estar aberto e logado no Instagram para melhor taxa de sucesso no download.
+> Chrome deve estar aberto e logado no Instagram para o download funcionar.
+
+> **Por que não `yt-dlp`?** O extrator do Instagram no `yt-dlp` está marcado como broken e retorna erro `Unable to extract data` mesmo com cookies válidos. O `gallery-dl` é a alternativa funcional.
 
 ---
 
@@ -43,10 +47,10 @@ O Claude vai executar o pipeline passo a passo e entregar os 10 roteiros prontos
 Os arquivos são salvos em `~/Downloads/Instagram/roteiros/`:
 
 ```
-01 - nomedoberfil - Titulo do Reel_roteiro.txt
-02 - nomedoberfil - Titulo do Reel_roteiro.txt
+01 - nomedoberfil - shortcode_roteiro.txt
+02 - nomedoberfil - shortcode_roteiro.txt
 ...
-10 - nomedoberfil - Titulo do Reel_roteiro.txt
+10 - nomedoberfil - shortcode_roteiro.txt
 ```
 
 Cada arquivo contém o idioma detectado e o texto transcrito completo.
@@ -74,5 +78,6 @@ model = whisper.load_model("medium")
 
 - Funciona com perfis públicos e privados (desde que você siga o perfil e esteja logado no Chrome)
 - Roda 100% local, sem custos de API
-- Se o download falhar, atualize o yt-dlp: `pip3 install -U yt-dlp`
-- O Whisper traduz nativamente para inglês (`task="translate"`); para PT-BR, use o Claude Code para traduzir os `.txt` gerados
+- O ffmpeg precisa estar no PATH — o script cria o symlink automaticamente via `imageio-ffmpeg`
+- O Whisper transcreve no idioma original do vídeo com detecção automática
+- Se o download falhar, certifique-se de estar logado no Instagram no Chrome e tente novamente
